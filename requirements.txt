@@ -1,6 +1,7 @@
 streamlit
 langchain-groq
 langchain-google-genai
+langchain-cohere
 langchain-huggingface
 langchain-community
 langchain-text-splitters
