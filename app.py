@@ -105,14 +105,14 @@ with st.sidebar:
         ])
     elif provider == "Google":
         model_name = st.selectbox("Model:", [
-            "gemini-1.5-flash", 
-            "gemini-pro"
+            "gemini-1.5-flash-latest", # Try this first (Fast & Free)
+            "gemini-1.5-pro-latest",   # Smarter but slower
+            "gemini-pro" 
         ])
     elif provider == "Cohere":
         model_name = st.selectbox("Model:", [
-            "command-r-plus", # Very smart RAG model
-            "command-r",      # Faster
-            "command"
+            "command-r-plus-08-2024", # The new Smartest
+            "command-r-08-2024",
         ])
 
     # C. API Key Logic
@@ -245,3 +245,4 @@ if prompt := st.chat_input("Ask a detailed question..."):
                     st.warning("Rate Limit Hit! Try switching the Provider in the sidebar.")
                 if "404" in str(e):
                     st.warning("Model not found. Try switching to a different model in the dropdown.")
+
