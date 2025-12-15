@@ -105,8 +105,8 @@ with st.sidebar:
         ])
     elif provider == "Google":
         model_name = st.selectbox("Model:", [
-            "gemini-1.5-flash-latest", # Try this first (Fast & Free)
-            "gemini-1.5-pro-latest",   # Smarter but slower
+            "gemini-1.5-flash", # Try this first (Fast & Free)
+            "gemini-1.5-pro",   # Smarter but slower
             "gemini-pro" 
         ])
     elif provider == "Cohere":
@@ -245,4 +245,5 @@ if prompt := st.chat_input("Ask a detailed question..."):
                     st.warning("Rate Limit Hit! Try switching the Provider in the sidebar.")
                 if "404" in str(e):
                     st.warning("Model not found. Try switching to a different model in the dropdown.")
+
 
