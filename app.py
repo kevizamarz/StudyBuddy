@@ -25,7 +25,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("♊ Professor AI: Powered by Google Gemini")
+st.title("Professor AI: Study Buddy")
 st.caption("High limits, huge context window, and deep answers.")
 
 # ----------------------------------------------------------------------
@@ -49,14 +49,13 @@ def get_embeddings():
     return HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
 
 def get_llm(api_key):
-    # SWITCHED TO GOOGLE GEMINI
     return ChatGoogleGenerativeAI(
         google_api_key=api_key,
-        model="gemini-1.5-flash", # Very fast, huge context, free
-        temperature=0.5,
+        model="gemini-pro", # The stable, standard version
+        temperature=0.6,
         convert_system_message_to_human=True 
     )
-
+    
 def format_docs(docs):
     return "\n\n".join(doc.page_content for doc in docs)
 
@@ -71,7 +70,7 @@ with st.sidebar:
     if input_key:
         st.session_state.api_key = input_key.strip()
     
-    st.markdown("[Get Free Google Key](https://aistudio.google.com/app/apikey)")
+    
     st.divider()
     
     # 2. File Uploader
@@ -204,3 +203,4 @@ if prompt := st.chat_input("Ask a question..."):
 
             except Exception as e:
                 st.error(f"Error: {e}")
+
