@@ -1,8 +1,10 @@
 streamlit
 langchain-groq
+langchain-google-genai
 langchain-huggingface
 langchain-community
 langchain-text-splitters
 chromadb
 pypdf
 sentence-transformers
+
