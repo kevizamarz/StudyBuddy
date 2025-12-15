@@ -3,9 +3,12 @@ import os
 import tempfile
 import time
 
-# NEW LIBRARY FOR GOOGLE
+# --- AI PROVIDERS ---
+from langchain_groq import ChatGroq
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_cohere import ChatCohere
 
+# --- RAG TOOLS ---
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import Chroma
@@ -14,66 +17,118 @@ from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough
 
-# ----------------------------------------------------------------------
-# 1. APP CONFIGURATION
-# ----------------------------------------------------------------------
-st.set_page_config(page_title="Study Buddy (Gemini)", page_icon="♊", layout="wide")
 
+st.set_page_config(page_title="Study Buddy Pro", page_icon="🎓", layout="wide")
+
+# Custom CSS for a better look
 st.markdown("""
 <style>
     .stChatMessage {font-size: 1.05rem;}
 </style>
 """, unsafe_allow_html=True)
 
-st.title("Professor AI: Study Buddy")
-st.caption("High limits, huge context window, and deep answers.")
+st.title("Professor AI: Ultimate Edition")
+st.caption("Upload your coursework and ask questions!")
 
-# ----------------------------------------------------------------------
-# 2. SESSION STATE
-# ----------------------------------------------------------------------
+
 if "messages" not in st.session_state:
     st.session_state.messages = []
 if "vectorstore" not in st.session_state:
     st.session_state.vectorstore = None
-if "api_key" not in st.session_state:
-    st.session_state.api_key = ""
 if "current_file" not in st.session_state:
     st.session_state.current_file = ""
 
-# ----------------------------------------------------------------------
-# 3. AI FUNCTIONS
-# ----------------------------------------------------------------------
+
+def get_api_key(provider):
+    """
+    Checks Streamlit Secrets first. If found, returns it.
+    This allows you to share the app without friends typing keys.
+    """
+    key_map = {
+        "Groq": "GROQ_API_KEY",
+        "Google": "GOOGLE_API_KEY",
+        "Cohere": "COHERE_API_KEY"
+    }
+    try:
+        return st.secrets[key_map[provider]]
+    except:
+        return None
+
 
 @st.cache_resource
 def get_embeddings():
     return HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
 
-def get_llm(api_key):
-    return ChatGoogleGenerativeAI(
-        google_api_key=api_key,
-        model="gemini-pro", # The stable, standard version
-        temperature=0.6,
-        convert_system_message_to_human=True 
-    )
+def get_llm(provider, api_key, model_name):
+    """
+    Returns the correct AI model based on user selection.
+    """
+    if provider == "Groq":
+        return ChatGroq(
+            groq_api_key=api_key,
+            model_name=model_name,
+            max_tokens=None, # Allow long answers
+            temperature=0.5
+        )
     
+    elif provider == "Google":
+        return ChatGoogleGenerativeAI(
+            google_api_key=api_key,
+            model=model_name,
+            temperature=0.5,
+            convert_system_message_to_human=True
+        )
+    
+    elif provider == "Cohere":
+        return ChatCohere(
+            cohere_api_key=api_key,
+            model=model_name,
+            temperature=0.5
+        )
+
 def format_docs(docs):
     return "\n\n".join(doc.page_content for doc in docs)
 
-# ----------------------------------------------------------------------
-# 4. SIDEBAR SETTINGS
-# ----------------------------------------------------------------------
+
 with st.sidebar:
-    st.header("⚙️ Settings")
+    st.header("⚙️ Brain Settings")
     
-    # 1. Google API Key
-    input_key = st.text_input("Google API Key:", type="password", value=st.session_state.api_key)
-    if input_key:
-        st.session_state.api_key = input_key.strip()
+    # A. Provider Selection
+    provider = st.radio("Select AI Provider:", ["Groq", "Google", "Cohere"], index=1)
     
+    # B. Model Selection (Dynamic)
+    if provider == "Groq":
+        model_name = st.selectbox("Model:", [
+            "llama-3.3-70b-versatile", 
+            "llama-3.1-8b-instant",
+            "mixtral-8x7b-32768"
+        ])
+    elif provider == "Google":
+        model_name = st.selectbox("Model:", [
+            "gemini-1.5-flash", 
+            "gemini-pro"
+        ])
+    elif provider == "Cohere":
+        model_name = st.selectbox("Model:", [
+            "command-r-plus", # Very smart RAG model
+            "command-r",      # Faster
+            "command"
+        ])
+
+    # C. API Key Logic
+    secret_key = get_api_key(provider)
     
+    if secret_key:
+        st.success(f"✅ {provider} Key loaded from system!")
+        api_key = secret_key
+    else:
+        api_key = st.text_input(f"Enter {provider} API Key:", type="password")
+        if not api_key:
+             st.warning(f"Please enter a key.")
+
     st.divider()
     
-    # 2. File Uploader
+    # D. File Uploader
     uploaded_file = st.file_uploader("📂 Upload PDF", type="pdf")
 
     if uploaded_file:
@@ -84,22 +139,19 @@ with st.sidebar:
             st.session_state.current_file = uploaded_file.name
             st.rerun()
 
-    # 3. Download/Clear
+    # E. Tools
     if len(st.session_state.messages) > 0:
         st.divider()
         if st.button("🗑️ Clear Chat"):
             st.session_state.messages = []
             st.rerun()
 
-# ----------------------------------------------------------------------
-# 5. PDF PROCESSING
-# ----------------------------------------------------------------------
-if not st.session_state.api_key:
-    st.warning("👈 Enter Google API Key to start.")
+
+if not api_key:
     st.stop()
 
 if uploaded_file and st.session_state.vectorstore is None:
-    with st.spinner("🧠 Analyzing PDF..."):
+    with st.spinner("🧠 Analyzing PDF (Deep Chunking)..."):
         try:
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
                 tmp_file.write(uploaded_file.getbuffer())
@@ -108,11 +160,9 @@ if uploaded_file and st.session_state.vectorstore is None:
             loader = PyPDFLoader(tmp_path)
             docs = loader.load()
 
-            # We can use slightly larger chunks with Gemini because it has a huge window
+            # Large chunks for deep context
             text_splitter = RecursiveCharacterTextSplitter(
-                chunk_size=2000, 
-                chunk_overlap=300,
-                separators=["\n\n", "\n", ".", " ", ""]
+                chunk_size=2000, chunk_overlap=300
             )
             splits = text_splitter.split_documents(docs)
 
@@ -120,54 +170,49 @@ if uploaded_file and st.session_state.vectorstore is None:
             st.session_state.vectorstore = Chroma.from_documents(documents=splits, embedding=embeddings)
             
             os.remove(tmp_path)
-            st.success(f"Ready! Processed {len(splits)} chunks.")
+            st.success(f"Processed {len(splits)} knowledge blocks.")
             time.sleep(1)
             st.rerun()
             
         except Exception as e:
             st.error(f"Error processing PDF: {e}")
 
-# ----------------------------------------------------------------------
-# 6. CHAT LOGIC
-# ----------------------------------------------------------------------
 
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-if prompt := st.chat_input("Ask a question..."):
+if prompt := st.chat_input("Ask a detailed question..."):
     
     if not st.session_state.vectorstore:
         st.error("Upload a PDF first.")
         st.stop()
 
-    # User Msg
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # AI Msg
     with st.chat_message("assistant"):
-        with st.spinner("Gemini is thinking..."):
+        with st.spinner(f"Consulting {model_name}..."):
             try:
-                llm = get_llm(st.session_state.api_key)
+                llm = get_llm(provider, api_key, model_name)
                 
-                # k=7 (Giving Gemini lots of context because it can handle it)
-                retriever = st.session_state.vectorstore.as_retriever(search_kwargs={"k": 7})
+                # Fetch 6 pages of context
+                retriever = st.session_state.vectorstore.as_retriever(search_kwargs={"k": 6})
                 
                 template = """
-                You are an expert University Professor.
-                Answer strictly based on the context provided.
+                You are a Distinguished University Professor.
                 
                 INSTRUCTIONS:
-                1. If grammar is wrong, fix it mentally and answer the intended question.
-                2. Be detailed and academic. Do not be brief.
-                3. Use this structure:
-                   - **Concept Definition**
-                   - **Detailed Explanation**
-                   - **Examples/Code**
-                   - **Summary**
-
+                1. Answer strictly based on the provided context.
+                2. Ignore user grammar errors; address the underlying question.
+                3. Be EXHAUSTIVE and DETAILED. Do not summarize.
+                4. Structure your response:
+                   - **Introduction**
+                   - **Deep Dive / Analysis**
+                   - **Examples / Code**
+                   - **Conclusion**
+                
                 CONTEXT:
                 {context}
 
@@ -194,13 +239,9 @@ if prompt := st.chat_input("Ask a question..."):
                 st.markdown(response)
                 st.session_state.messages.append({"role": "assistant", "content": response})
 
-                # Sources
-                related_docs = retriever.invoke(prompt)
-                with st.expander("📚 Sources"):
-                    for i, doc in enumerate(related_docs):
-                        st.markdown(f"**Page {doc.metadata.get('page', '?')}**")
-                        st.caption(doc.page_content[:200] + "...")
-
             except Exception as e:
                 st.error(f"Error: {e}")
-
+                if "429" in str(e):
+                    st.warning("Rate Limit Hit! Try switching the Provider in the sidebar.")
+                if "404" in str(e):
+                    st.warning("Model not found. Try switching to a different model in the dropdown.")
