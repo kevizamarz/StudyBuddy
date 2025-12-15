@@ -3,7 +3,9 @@ import os
 import tempfile
 import time
 
-from langchain_groq import ChatGroq
+# NEW LIBRARY FOR GOOGLE
+from langchain_google_genai import ChatGoogleGenerativeAI
+
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import Chroma
@@ -15,12 +17,7 @@ from langchain_core.runnables import RunnablePassthrough
 # ----------------------------------------------------------------------
 # 1. APP CONFIGURATION
 # ----------------------------------------------------------------------
-st.set_page_config(
-    page_title="Study Buddy Pro", 
-    page_icon="🎓", 
-    layout="wide", 
-    initial_sidebar_state="expanded"
-)
+st.set_page_config(page_title="Study Buddy (Gemini)", page_icon="♊", layout="wide")
 
 st.markdown("""
 <style>
@@ -28,8 +25,8 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("🎓 Professor AI: Deep Study Buddy")
-st.caption("Detailed answers from your coursework. Switch models if rate limits occur.")
+st.title("♊ Professor AI: Powered by Google Gemini")
+st.caption("High limits, huge context window, and deep answers.")
 
 # ----------------------------------------------------------------------
 # 2. SESSION STATE
@@ -51,12 +48,13 @@ if "current_file" not in st.session_state:
 def get_embeddings():
     return HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
 
-def get_llm(api_key, model_choice):
-    return ChatGroq(
-        groq_api_key=api_key,
-        model_name=model_choice,
-        max_tokens=None, # Allow long answers
-        temperature=0.5
+def get_llm(api_key):
+    # SWITCHED TO GOOGLE GEMINI
+    return ChatGoogleGenerativeAI(
+        google_api_key=api_key,
+        model="gemini-1.5-flash", # Very fast, huge context, free
+        temperature=0.5,
+        convert_system_message_to_human=True 
     )
 
 def format_docs(docs):
@@ -68,26 +66,15 @@ def format_docs(docs):
 with st.sidebar:
     st.header("⚙️ Settings")
     
-    # 1. API Key
-    input_key = st.text_input("Groq API Key:", type="password", value=st.session_state.api_key)
+    # 1. Google API Key
+    input_key = st.text_input("Google API Key:", type="password", value=st.session_state.api_key)
     if input_key:
         st.session_state.api_key = input_key.strip()
     
-    # 2. MODEL SWITCHER (The Fix for 429 Errors)
+    st.markdown("[Get Free Google Key](https://aistudio.google.com/app/apikey)")
     st.divider()
-    st.write("🤖 **Select Brain:**")
-    model_option = st.selectbox(
-        "Choose Model:",
-        (
-            "llama-3.3-70b-versatile", # Smartest (Hit limit fast)
-            "llama-3.1-8b-instant",    # Faster (Less smart, higher limit)
-            "mixtral-8x7b-32768"       # Alternative Smart option
-        ),
-        index=0
-    )
     
-    # 3. File Uploader
-    st.divider()
+    # 2. File Uploader
     uploaded_file = st.file_uploader("📂 Upload PDF", type="pdf")
 
     if uploaded_file:
@@ -98,7 +85,7 @@ with st.sidebar:
             st.session_state.current_file = uploaded_file.name
             st.rerun()
 
-    # 4. Download/Clear
+    # 3. Download/Clear
     if len(st.session_state.messages) > 0:
         st.divider()
         if st.button("🗑️ Clear Chat"):
@@ -109,7 +96,7 @@ with st.sidebar:
 # 5. PDF PROCESSING
 # ----------------------------------------------------------------------
 if not st.session_state.api_key:
-    st.warning("👈 Enter Groq API Key to start.")
+    st.warning("👈 Enter Google API Key to start.")
     st.stop()
 
 if uploaded_file and st.session_state.vectorstore is None:
@@ -122,9 +109,9 @@ if uploaded_file and st.session_state.vectorstore is None:
             loader = PyPDFLoader(tmp_path)
             docs = loader.load()
 
-            # OPTIMIZED CHUNKING: 1500 chars (Good balance of Detail vs Token Cost)
+            # We can use slightly larger chunks with Gemini because it has a huge window
             text_splitter = RecursiveCharacterTextSplitter(
-                chunk_size=1500, 
+                chunk_size=2000, 
                 chunk_overlap=300,
                 separators=["\n\n", "\n", ".", " ", ""]
             )
@@ -162,13 +149,12 @@ if prompt := st.chat_input("Ask a question..."):
 
     # AI Msg
     with st.chat_message("assistant"):
-        with st.spinner(f"Thinking using {model_option}..."):
+        with st.spinner("Gemini is thinking..."):
             try:
-                # Pass the selected model from sidebar
-                llm = get_llm(st.session_state.api_key, model_option)
+                llm = get_llm(st.session_state.api_key)
                 
-                # k=5 (Optimized for balance)
-                retriever = st.session_state.vectorstore.as_retriever(search_kwargs={"k": 5})
+                # k=7 (Giving Gemini lots of context because it can handle it)
+                retriever = st.session_state.vectorstore.as_retriever(search_kwargs={"k": 7})
                 
                 template = """
                 You are an expert University Professor.
@@ -217,8 +203,4 @@ if prompt := st.chat_input("Ask a question..."):
                         st.caption(doc.page_content[:200] + "...")
 
             except Exception as e:
-                # Catch the 429 Error specifically
-                if "429" in str(e):
-                    st.error("🚨 Rate Limit Hit! Please switch to the '8b-instant' model in the sidebar settings.")
-                else:
-                    st.error(f"Error: {e}")
+                st.error(f"Error: {e}")
