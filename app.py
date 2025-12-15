@@ -3,7 +3,6 @@ import os
 import tempfile
 import time
 
-# Libraries for RAG
 from langchain_groq import ChatGroq
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -13,7 +12,9 @@ from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough
 
-
+# ----------------------------------------------------------------------
+# 1. APP CONFIGURATION
+# ----------------------------------------------------------------------
 st.set_page_config(
     page_title="Study Buddy Pro", 
     page_icon="🎓", 
@@ -21,99 +22,98 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS: Makes the text area bigger and cleaner
 st.markdown("""
 <style>
     .stChatMessage {font-size: 1.05rem;}
-    div.stButton > button {width: 100%;}
 </style>
 """, unsafe_allow_html=True)
 
-st.title("Study Buddy")
-st.caption("I provide exhaustive, lecture-quality answers from your coursework.")
+st.title("🎓 Professor AI: Deep Study Buddy")
+st.caption("Detailed answers from your coursework. Switch models if rate limits occur.")
 
-
+# ----------------------------------------------------------------------
+# 2. SESSION STATE
+# ----------------------------------------------------------------------
 if "messages" not in st.session_state:
     st.session_state.messages = []
-
 if "vectorstore" not in st.session_state:
     st.session_state.vectorstore = None
-
 if "api_key" not in st.session_state:
     st.session_state.api_key = ""
-
 if "current_file" not in st.session_state:
     st.session_state.current_file = ""
 
-
+# ----------------------------------------------------------------------
+# 3. AI FUNCTIONS
+# ----------------------------------------------------------------------
 
 @st.cache_resource
 def get_embeddings():
-    # Downloads the embedding model locally (Runs on CPU)
     return HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
 
-def get_llm(api_key):
+def get_llm(api_key, model_choice):
     return ChatGroq(
         groq_api_key=api_key,
-        model_name="llama-3.3-70b-versatile",
-        
-        max_tokens=None, 
-        temperature=0.6 
+        model_name=model_choice,
+        max_tokens=None, # Allow long answers
+        temperature=0.5
     )
 
 def format_docs(docs):
     return "\n\n".join(doc.page_content for doc in docs)
 
-
+# ----------------------------------------------------------------------
+# 4. SIDEBAR SETTINGS
+# ----------------------------------------------------------------------
 with st.sidebar:
-    st.header("⚙️ Configuration")
+    st.header("⚙️ Settings")
     
     # 1. API Key
     input_key = st.text_input("Groq API Key:", type="password", value=st.session_state.api_key)
     if input_key:
         st.session_state.api_key = input_key.strip()
     
+    # 2. MODEL SWITCHER (The Fix for 429 Errors)
     st.divider()
+    st.write("🤖 **Select Brain:**")
+    model_option = st.selectbox(
+        "Choose Model:",
+        (
+            "llama-3.3-70b-versatile", # Smartest (Hit limit fast)
+            "llama-3.1-8b-instant",    # Faster (Less smart, higher limit)
+            "mixtral-8x7b-32768"       # Alternative Smart option
+        ),
+        index=0
+    )
     
-    # 2. File Uploader
-    uploaded_file = st.file_uploader("📂 Upload PDF (Coursework)", type="pdf")
+    # 3. File Uploader
+    st.divider()
+    uploaded_file = st.file_uploader("📂 Upload PDF", type="pdf")
 
-    # 3. Intelligent Reset Logic
     if uploaded_file:
         if uploaded_file.name != st.session_state.current_file:
-            st.toast("New file detected. Processing...", icon="🧠")
+            st.toast("New file detected. Resetting memory...", icon="🧠")
             st.session_state.vectorstore = None
             st.session_state.messages = []
             st.session_state.current_file = uploaded_file.name
             st.rerun()
 
-    # 4. Download Chat History
+    # 4. Download/Clear
     if len(st.session_state.messages) > 0:
         st.divider()
-        chat_text = ""
-        for msg in st.session_state.messages:
-            role = "STUDENT" if msg["role"] == "user" else "PROFESSOR"
-            chat_text += f"{role}: {msg['content']}\n\n"
-            
-        st.download_button(
-            label="💾 Download Conversation",
-            data=chat_text,
-            file_name="study_session.txt",
-            mime="text/plain"
-        )
-        
         if st.button("🗑️ Clear Chat"):
             st.session_state.messages = []
             st.rerun()
 
-
-# Check API Key first
+# ----------------------------------------------------------------------
+# 5. PDF PROCESSING
+# ----------------------------------------------------------------------
 if not st.session_state.api_key:
-    st.warning("👈 Please enter your Groq API Key in the sidebar to start.")
+    st.warning("👈 Enter Groq API Key to start.")
     st.stop()
 
 if uploaded_file and st.session_state.vectorstore is None:
-    with st.spinner("🧠 Reading PDF... Organizing data for deep understanding..."):
+    with st.spinner("🧠 Analyzing PDF..."):
         try:
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
                 tmp_file.write(uploaded_file.getbuffer())
@@ -122,10 +122,10 @@ if uploaded_file and st.session_state.vectorstore is None:
             loader = PyPDFLoader(tmp_path)
             docs = loader.load()
 
-            # MEGA CHUNKS: 2500 characters allows for very long context retention
+            # OPTIMIZED CHUNKING: 1500 chars (Good balance of Detail vs Token Cost)
             text_splitter = RecursiveCharacterTextSplitter(
-                chunk_size=2500, 
-                chunk_overlap=400,
+                chunk_size=1500, 
+                chunk_overlap=300,
                 separators=["\n\n", "\n", ".", " ", ""]
             )
             splits = text_splitter.split_documents(docs)
@@ -134,117 +134,70 @@ if uploaded_file and st.session_state.vectorstore is None:
             st.session_state.vectorstore = Chroma.from_documents(documents=splits, embedding=embeddings)
             
             os.remove(tmp_path)
-            st.success(f"Processed {len(splits)} knowledge blocks from the PDF.")
+            st.success(f"Ready! Processed {len(splits)} chunks.")
             time.sleep(1)
             st.rerun()
             
         except Exception as e:
             st.error(f"Error processing PDF: {e}")
 
-
+# ----------------------------------------------------------------------
+# 6. CHAT LOGIC
+# ----------------------------------------------------------------------
 
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-if prompt := st.chat_input("Ask a detailed question..."):
+if prompt := st.chat_input("Ask a question..."):
     
     if not st.session_state.vectorstore:
-        st.error("Please upload a PDF first.")
+        st.error("Upload a PDF first.")
         st.stop()
 
-    # User Message
+    # User Msg
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # Assistant Response
+    # AI Msg
     with st.chat_message("assistant"):
-        with st.spinner("Consulting the lecture notes..."):
+        with st.spinner(f"Thinking using {model_option}..."):
             try:
-                llm = get_llm(st.session_state.api_key)
+                # Pass the selected model from sidebar
+                llm = get_llm(st.session_state.api_key, model_option)
                 
-                # Fetch 6 very large chunks (This is about 15,000 characters of context)
-                retriever = st.session_state.vectorstore.as_retriever(search_kwargs={"k": 6})
+                # k=5 (Optimized for balance)
+                retriever = st.session_state.vectorstore.as_retriever(search_kwargs={"k": 5})
                 
-                # --- THE "LONG FORM" PROMPT ---
                 template = """
-                    You are an experienced university-level educator whose primary goal is to help a student deeply understand their coursework.
+                You are an expert University Professor.
+                Answer strictly based on the context provided.
+                
+                INSTRUCTIONS:
+                1. If grammar is wrong, fix it mentally and answer the intended question.
+                2. Be detailed and academic. Do not be brief.
+                3. Use this structure:
+                   - **Concept Definition**
+                   - **Detailed Explanation**
+                   - **Examples/Code**
+                   - **Summary**
 
-                    Your role is adaptive:
-                    - If the subject is technical, explain it with precision and logic.
-                    - If the subject is theoretical, explain it with intuition and clarity.
-                    - If the subject is mathematical or scientific, reason step by step.
-                    - If the subject is descriptive or conceptual, explain ideas, relationships, and implications clearly.
+                CONTEXT:
+                {context}
 
-                    GENERAL TEACHING GUIDELINES:
+                CHAT HISTORY:
+                {chat_history}
 
-                    1. **Intent Awareness & Clarification**
-                    - If the student’s question contains spelling or grammar mistakes, infer the intended meaning and answer the correct question.
-                    - If the question is ambiguous or incomplete, first ask a brief clarifying question **only if it is necessary for correctness**.
-                    - If clarification is not strictly required, proceed with the most reasonable interpretation and explain your assumptions.
+                QUESTION:
+                {question}
 
-                    2. **Teaching-Oriented Explanation**
-                    - Assume the student is learning this topic for the first time.
-                    - Teach as a professor would during a lecture or consultation.
-                    - Prioritize understanding over short or exam-style answers.
-                    - Always aim to clarify the student’s doubts, either through detailed explanation or by connecting concepts logically.
-
-                    3. **Adaptive Structure**
-                    - Do NOT follow a fixed or mandatory format.
-                    - Organize explanations naturally based on the topic and question.
-                    - Use headings, subheadings, bullet points, step-by-step reasoning, comparisons, or worked examples **only when they improve comprehension**.
-
-                    4. **Depth, Enrichment & Beyond the Question**
-                    - Fully answer the student’s question first.
-                    - Then, where appropriate:
-                        - introduce prerequisite or background concepts,
-                        - explain *why* the topic matters,
-                        - connect it to other related areas in the coursework,
-                        - highlight common student misconceptions or mistakes.
-
-                    5. **Real-World Examples & Intuition**
-                    - Include real-world examples, analogies, or practical scenarios wherever possible to make abstract ideas easier to understand.
-                    - Examples should relate to university-level contexts and daily life to build intuition.
-
-                    6. **Difficulty Adaptation**
-                    - Adjust the depth, pace, and complexity of the explanation based on the apparent difficulty of the question.
-                    - For simple questions, explain clearly but concisely.
-                    - For complex questions, explain progressively, as a professor would on a whiteboard.
-
-                    7. **Q&A Mode**
-                    - If the student explicitly requests questions and answers, generate them in a **question-paper style** based on the PDF content.
-                    - Provide correct, clear answers immediately after each question.
-                    - Ensure questions cover key concepts, examples, and practical applications found in the PDF.
-
-                    8. **Use of Provided Material**
-                    - Base explanations primarily on the provided PDF context.
-                    - Do not fabricate facts outside the coursework.
-                    - If something is implied rather than explicitly stated, explain it carefully as a logical or contextual inference.
-
-                    9. **Tone**
-                    - Calm, patient, and instructional.
-                    - Encourage understanding, not memorization.
-                    - Sound like a professor guiding a student to *learn*, not just to get an answer.
-
-                    COURSE MATERIAL CONTEXT:
-                    {context}
-
-                    RECENT CHAT HISTORY:
-                    {chat_history}
-
-                    STUDENT QUESTION:
-                    {question}
-
-                    DETAILED TEACHING RESPONSE:
-
+                ANSWER:
                 """
 
                 custom_prompt = PromptTemplate.from_template(template)
-
                 history_str = "\n".join([f"{m['role']}: {m['content']}" for m in st.session_state.messages[-5:]])
 
-                # The Chain
                 rag_chain = (
                     {"context": retriever | format_docs, "question": RunnablePassthrough(), "chat_history": lambda x: history_str}
                     | custom_prompt
@@ -253,16 +206,19 @@ if prompt := st.chat_input("Ask a detailed question..."):
                 )
 
                 response = rag_chain.invoke(prompt)
-                
                 st.markdown(response)
                 st.session_state.messages.append({"role": "assistant", "content": response})
 
-                # Source Accordion
+                # Sources
                 related_docs = retriever.invoke(prompt)
-                with st.expander("📚 View Source Snippets (Evidence)"):
+                with st.expander("📚 Sources"):
                     for i, doc in enumerate(related_docs):
                         st.markdown(f"**Page {doc.metadata.get('page', '?')}**")
-                        st.caption(doc.page_content[:300] + "...")
+                        st.caption(doc.page_content[:200] + "...")
 
             except Exception as e:
-                st.error(f"Error generation: {e}")
+                # Catch the 429 Error specifically
+                if "429" in str(e):
+                    st.error("🚨 Rate Limit Hit! Please switch to the '8b-instant' model in the sidebar settings.")
+                else:
+                    st.error(f"Error: {e}")
