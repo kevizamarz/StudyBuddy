@@ -215,6 +215,7 @@ if prompt := st.chat_input("Ask a detailed question..."):
                 - Generate quizzes based only on the provided material.
                 - Support MCQs, True/False, Short Answer, Essay Questions, and Mixed Question Sets.
                 - Provide answer keys when requested.
+                - Provide detailed explanations for answers when requested.
 
                 4. Flashcard Mode
                 - Generate question-answer flashcards suitable for revision.
