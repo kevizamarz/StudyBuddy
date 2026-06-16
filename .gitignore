@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+venv/
+.env
+.venv/
+
+# Streamlit
+.streamlit/
+
+# Chroma DB persistence
+chroma_db/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs, caches, temp files
+*.log
+*.tmp
+*.temp
+*.cache
+
+# IDE/editor
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# StudyChatBot API Code
+studychatbot-api-code.txt
