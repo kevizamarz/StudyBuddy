@@ -12,7 +12,7 @@ A Streamlit-based study assistant that loads PDF course material, creates embedd
 
 ## Go check this out
 
-Visit: https://studybuddy-affqjs9kkhv7rfetrmtpxy.streamlit.app/
+Visit: https://studybuddypro.streamlit.app
 
 ## Notes
 
